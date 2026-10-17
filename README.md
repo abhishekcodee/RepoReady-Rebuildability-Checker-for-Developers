@@ -1,4 +1,6 @@
-# RepoReady
+# RepoReady-Rebuildability-Checker-for-Developers
+
+RepoReady: An Open-Source Project Rebuildability and Configuration Checker
 
 RepoReady is a local developer tool that will inspect software project
 directories for common rebuildability and reproducibility problems. It is
