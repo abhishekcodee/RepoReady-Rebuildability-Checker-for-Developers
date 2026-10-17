@@ -7,11 +7,11 @@ clear findings for developers who need to share or rebuild a project.
 
 ## Current status
 
-This repository currently contains **Stage 1: Project Architecture and
-Environment Setup**. The package metadata, pinned Python runtime, command-line
-entry point, and initial offline test are configured. Project scanning and the
-eight rebuildability checks are intentionally not implemented yet; they are
-planned for Stage 2.
+This repository currently contains **Stage 2: Core Scanner and Rebuildability
+Checks**. The package metadata, pinned Python runtime, command-line entry
+point, safe static project scanner, eight structured rebuildability checks, and
+offline tests are configured. Scoring, terminal reporting, and JSON report
+generation are intentionally deferred to later stages.
 
 ## Requirements
 
@@ -62,17 +62,17 @@ The tests are designed to run offline.
 ## Project structure
 
 ```text
-src/repoready/   Python package and CLI entry point
+src/repoready/   Python package, scanner, checks, and CLI entry point
 tests/            Offline automated tests
 pyproject.toml    Package metadata and tool configuration
 .python-version   Pinned Python runtime line
 uv.lock          uv-generated dependency lockfile
 ```
 
-The scanner, checks, scoring, report generation, examples, Dockerfile, and
+Scoring, report generation, examples, Dockerfile, CI configuration, and
 complete user documentation will be added in the approved later stages. No
-environment variables are currently required, so an `.env.example` file is
-not included in Stage 1.
+environment variables are currently required by RepoReady itself, so an
+`.env.example` file is not included.
 
 ## License
 
