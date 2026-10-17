@@ -1,0 +1,36 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Build and packaging output
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+
+# Local tooling and generated reports
+.repoready/
+reports/
+
+# Editor and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local environment files; keep only the documented template tracked.
+.env
+.env.*
+!.env.example
