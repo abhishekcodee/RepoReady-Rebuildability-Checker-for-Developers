@@ -20,6 +20,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import Enum
+import re
 from pathlib import Path
 from types import MappingProxyType
 from typing import Final
@@ -128,6 +129,17 @@ _FALLBACK_RECOMMENDATIONS: Final[Mapping[str, str]] = MappingProxyType({
     "environment_example": "Add a sanitized .env.example for the environment variables used by the project.",
     "absolute_paths": "Replace machine-specific paths with relative or configurable paths.",
 })
+
+_SECRET_ASSIGNMENT: Final[re.Pattern[str]] = re.compile(
+    r"(?i)\b(?:api[ _-]?key|access[ _-]?token|auth(?:entication)?[ _-]?token|"
+    r"client[ _-]?secret|password|passwd|secret|token|private[ _-]?key)\b"
+    r"\s*(?:=|:)\s*[^\s,;]+"
+)
+
+
+def _safe_recommendation(message: str) -> str:
+    """Keep recommendation text useful without copying obvious secret values."""
+    return _SECRET_ASSIGNMENT.sub("[REDACTED]", message)
 
 
 def _coerce_status(value: object) -> Status | None:
@@ -299,6 +311,7 @@ def generate_recommendations(results: Iterable[object] | None) -> tuple[Recommen
         message = custom or _FALLBACK_RECOMMENDATIONS.get(
             name, f"Review the {name} check and address the reported issue."
         )
+        message = _safe_recommendation(message)
         path, line = _recommendation_context(result)
         key = (name, status.value, message, path.as_posix() if path else None, line)
         if key in seen:
