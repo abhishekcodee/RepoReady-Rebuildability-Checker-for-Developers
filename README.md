@@ -9,11 +9,11 @@ clear findings for developers who need to share or rebuild a project.
 
 ## Current status
 
-This repository currently contains **Stage 2: Core Scanner and Rebuildability
-Checks**. The package metadata, pinned Python runtime, command-line entry
-point, safe static project scanner, eight structured rebuildability checks, and
-offline tests are configured. Scoring, terminal reporting, and JSON report
-generation are intentionally deferred to later stages.
+This repository currently contains **Stage 3: CLI integration**. The package
+metadata, pinned Python runtime, safe static project scanner, eight structured
+rebuildability checks, weighted scoring, terminal reporting, and sanitized JSON
+report generation are configured. RepoReady works offline and does not execute
+inspected project code.
 
 ## Requirements
 
@@ -45,10 +45,23 @@ After synchronizing the environment:
 ```bash
 uv run repoready --help
 uv run repoready --version
+uv run repoready PATH
+uv run repoready PATH --json report.json
+uv run repoready PATH --verbose
 ```
 
-Passing a project path currently returns an explanatory Stage 1 message. The
-scanner will be added in Stage 2.
+`PATH` must be an existing project directory. A scan prints the score, coverage,
+all eight check results, recommendations, and limitations. `--json` writes the
+same sanitized report to the requested existing output directory; it does not
+create parent directories. `--verbose` includes scanner error details in the
+limitations section. The scan is static: project code, setup scripts, tests,
+and network calls are not executed.
+
+RepoReady uses these exit codes:
+
+- `0`: scan and report succeeded, including when findings are present.
+- `1`: operational failure, including a JSON export failure.
+- `2`: invalid command-line input or scan target.
 
 ## Tests
 
@@ -71,9 +84,7 @@ pyproject.toml    Package metadata and tool configuration
 uv.lock          uv-generated dependency lockfile
 ```
 
-Scoring, report generation, examples, Dockerfile, CI configuration, and
-complete user documentation will be added in the approved later stages. No
-environment variables are currently required by RepoReady itself, so an
+No environment variables are currently required by RepoReady itself, so an
 `.env.example` file is not included.
 
 ## License
