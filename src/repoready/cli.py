@@ -70,6 +70,16 @@ def _text(value: object) -> str:
     return _safe_text(value)
 
 
+def _write_stdout(text: str) -> None:
+    """Write terminal text without crashing on a narrow Windows code page."""
+    try:
+        sys.stdout.write(text + "\n")
+    except UnicodeEncodeError:
+        encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+        safe_text = text.encode(encoding, errors="replace").decode(encoding, errors="replace")
+        sys.stdout.write(safe_text + "\n")
+
+
 def _render_report(report: Mapping[str, Any], *, verbose: bool = False) -> str:
     """Render only sanitized values from :func:`build_report` for the terminal."""
     project = report.get("project")
@@ -214,9 +224,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         output = None
 
-    print(_render_report(report, verbose=args.verbose))
+    _write_stdout(_render_report(report, verbose=args.verbose))
     if output is not None:
-        print(f"JSON report written to {_text(Path(output).as_posix())}")
+        _write_stdout(f"JSON report written to {_text(Path(output).as_posix())}")
     return SUCCESS
 
 
