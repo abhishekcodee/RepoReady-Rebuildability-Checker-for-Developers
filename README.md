@@ -342,7 +342,15 @@ repository bundled into the deployment at `/api`; it does not accept arbitrary
 filesystem paths or execute uploaded project code.
 
 The Vercel dashboard can import this GitHub repository without additional
-runtime dependencies. After deployment, request:
+runtime dependencies. After deployment, open the root URL to see the
+dashboard:
+
+```text
+https://<your-deployment>.vercel.app/
+```
+
+The dashboard loads the live report from `/api`. To inspect the machine-readable
+response directly, request:
 
 ```text
 https://<your-deployment>.vercel.app/api
