@@ -29,6 +29,7 @@ class FakeHandler(MODULE.handler):
         self.wfile = io.BytesIO()
         self.headers_sent: list[tuple[str, str]] = []
         self.status: int | None = None
+        self.headers: dict[str, str] = {}
 
     def send_response(self, status: int, message: str | None = None) -> None:
         self.status = status
@@ -59,6 +60,16 @@ class VercelAdapterTests(unittest.TestCase):
 
         self.assertEqual(response.status, 405)
         self.assertEqual(json.loads(response.wfile.getvalue()), {"error": "method not allowed"})
+
+    def test_browser_accept_header_returns_dashboard_html(self) -> None:
+        response = FakeHandler()
+        response.headers["Accept"] = "text/html,application/xhtml+xml"
+
+        MODULE.handler.do_GET(response)
+
+        self.assertEqual(response.status, 200)
+        self.assertIn("text/html", dict(response.headers_sent)["Content-Type"])
+        self.assertIn("RepoReady", response.wfile.getvalue().decode("utf-8"))
 
 
 if __name__ == "__main__":

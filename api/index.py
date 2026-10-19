@@ -15,6 +15,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = PROJECT_ROOT / "src"
+DASHBOARD_PATH = PROJECT_ROOT / "index.html"
 if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
@@ -24,14 +25,24 @@ from repoready.scanner import InvalidTargetError, scan_project  # noqa: E402
 from repoready.scoring import calculate_score  # noqa: E402
 
 
-def _json_response(handler: BaseHTTPRequestHandler, status: int, body: str) -> None:
-    """Write a UTF-8 JSON response without exposing exception details."""
+def _response(
+    handler: BaseHTTPRequestHandler,
+    status: int,
+    body: str,
+    content_type: str,
+) -> None:
+    """Write a UTF-8 response without exposing exception details."""
     payload = body.encode("utf-8")
     handler.send_response(status)
-    handler.send_header("Content-Type", "application/json; charset=utf-8")
+    handler.send_header("Content-Type", content_type)
     handler.send_header("Content-Length", str(len(payload)))
     handler.end_headers()
     handler.wfile.write(payload)
+
+
+def _json_response(handler: BaseHTTPRequestHandler, status: int, body: str) -> None:
+    """Write a JSON response."""
+    _response(handler, status, body, "application/json; charset=utf-8")
 
 
 class handler(BaseHTTPRequestHandler):
@@ -48,6 +59,10 @@ class handler(BaseHTTPRequestHandler):
             _json_response(self, 500, '{"error":"RepoReady could not scan the deployment"}')
             return
 
+        accept = self.headers.get("Accept", "")
+        if "text/html" in accept and DASHBOARD_PATH.is_file():
+            _response(self, 200, DASHBOARD_PATH.read_text(encoding="utf-8"), "text/html; charset=utf-8")
+            return
         _json_response(self, 200, report)
 
     def do_POST(self) -> None:  # noqa: N802 - required HTTP handler method
