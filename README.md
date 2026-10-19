@@ -333,6 +333,24 @@ examples. The image does not install Git, so its `git_repository` check can be
 `UNKNOWN` even when the target contains Git metadata. No Docker build or run
 result is claimed unless you run those commands.
 
+## Optional Vercel deployment
+
+RepoReady is primarily a local CLI tool. The repository also includes a small
+read-only Vercel adapter at `api/index.py` so Vercel's Python runtime has a
+supported HTTP entrypoint. A deployment serves the scan report for the
+repository bundled into the deployment at `/api`; it does not accept arbitrary
+filesystem paths or execute uploaded project code.
+
+The Vercel dashboard can import this GitHub repository without additional
+runtime dependencies. After deployment, request:
+
+```text
+https://<your-deployment>.vercel.app/api
+```
+
+This endpoint is supplemental. For scanning a local project directory, use the
+CLI or Docker workflow above.
+
 ## Troubleshooting
 
 - **`uv` is not found:** install uv using its official installation
