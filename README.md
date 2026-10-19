@@ -44,8 +44,8 @@ complete security scanner.
 
 ## Supported ecosystems and scope
 
-RepoReady itself is a Python package and its runtime is Python 3.12.7 or a
-later Python 3.12 patch release.
+RepoReady itself is a Python package and its runtime is Python 3.12 or a later
+Python 3.12 patch release.
 
 ### Python-primary recognition
 
@@ -94,7 +94,7 @@ tests/          Offline unittest suite for scanner, checks, scoring, reports, CL
 Dockerfile      Reproducible container image and repoready entrypoint
 pyproject.toml  Package metadata and console-script declaration
 uv.lock         Committed uv lockfile
-.python-version Python runtime pin: 3.12.7
+.python-version Python runtime line: 3.12
 .env.example    Documented empty environment template
 LICENSE         MIT License
 ```
@@ -103,8 +103,8 @@ The installed console script is `repoready = repoready.cli:main`.
 
 ## Prerequisites
 
-- Python `3.12.7` or a later `3.12.x` release. The project requires
-  `>=3.12.7,<3.13`.
+- Python `3.12` or a later `3.12.x` release. The project requires
+  `>=3.12,<3.13`.
 - [uv](https://docs.astral.sh/uv/) for the virtual environment, editable
   install, and lockfile workflow. The repository Dockerfile and CI workflow
   use uv `0.13.1`.
@@ -363,7 +363,7 @@ CLI or Docker workflow above.
 
 - **`uv` is not found:** install uv using its official installation
   instructions, then verify it is available with `uv --version`.
-- **Python version rejected:** use Python `3.12.7` or a later `3.12.x` release;
+- **Python version rejected:** use Python `3.12` or a later `3.12.x` release;
   the project intentionally excludes Python 3.13 and later.
 - **`uv sync --locked` reports a lock mismatch:** restore or regenerate the
   lockfile with the project's pinned dependency changes, then rerun the locked

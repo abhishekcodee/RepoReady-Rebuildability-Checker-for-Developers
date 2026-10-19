@@ -7,7 +7,7 @@ name = "repoready"
 version = "0.1.0"
 description = "A safe, static rebuildability checker for software projects."
 readme = "README.md"
-requires-python = ">=3.12.7,<3.13"
+requires-python = ">=3.12,<3.13"
 license = { file = "LICENSE" }
 authors = [
     { name = "RepoReady Contributors" },
