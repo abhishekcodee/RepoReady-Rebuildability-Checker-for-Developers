@@ -10,7 +10,13 @@ from typing import Any
 
 from . import __version__
 from .checks import run_checks
-from .report import ReportWriteError, build_report, write_json_report
+from .report import (
+    ReportWriteError,
+    _safe_text,
+    _scanner_error_summary,
+    build_report,
+    write_json_report,
+)
 from .scanner import InvalidTargetError, scan_project
 from .scoring import calculate_score, generate_recommendations
 
@@ -61,7 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _text(value: object) -> str:
     """Convert report values to display text without accessing source files."""
-    return value if isinstance(value, str) else str(value)
+    return _safe_text(value)
 
 
 def _render_report(report: Mapping[str, Any], *, verbose: bool = False) -> str:
@@ -127,7 +133,7 @@ def _render_report(report: Mapping[str, Any], *, verbose: bool = False) -> str:
         scan_errors = scanner.get("scan_errors", ())
         if isinstance(scan_errors, (list, tuple)):
             if verbose:
-                limitations.extend(f"Scanner error: {_text(item)}" for item in scan_errors)
+                limitations.extend(_scanner_error_summary(item) for item in scan_errors)
             elif scan_errors:
                 limitations.append(
                     f"{len(scan_errors)} scanner error(s) were recorded; rerun with --verbose for details."
@@ -174,6 +180,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (OSError, ValueError):
         print("error: could not inspect the scan target", file=sys.stderr)
         return OPERATIONAL_ERROR
+    except Exception:
+        # A filesystem provider or scanner extension must not be able to put
+        # its exception text in the terminal.
+        print("error: could not inspect the scan target", file=sys.stderr)
+        return OPERATIONAL_ERROR
 
     try:
         results = run_checks(snapshot)
@@ -196,12 +207,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         except (OSError, ValueError):
             print("error: could not write the JSON report", file=sys.stderr)
             return OPERATIONAL_ERROR
+        except Exception:
+            # Never expose report-path or filesystem-provider exception text.
+            print("error: could not write the JSON report", file=sys.stderr)
+            return OPERATIONAL_ERROR
     else:
         output = None
 
     print(_render_report(report, verbose=args.verbose))
     if output is not None:
-        print(f"JSON report written to {Path(output).as_posix()}")
+        print(f"JSON report written to {_text(Path(output).as_posix())}")
     return SUCCESS
 
 

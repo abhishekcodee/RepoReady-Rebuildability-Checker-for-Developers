@@ -63,6 +63,17 @@ RepoReady uses these exit codes:
 - `1`: operational failure, including a JSON export failure.
 - `2`: invalid command-line input or scan target.
 
+## Security and static-inspection limitations
+
+RepoReady is intentionally conservative: it reads bounded text metadata and
+configuration files, skips generated directories, rejects symbolic links, and
+does not execute scanned project code. Sensitive files such as `.env` files
+and private-key-like files are not loaded, and reports redact common token and
+secret assignment patterns. Secret protection is best effort rather than a
+guarantee; unusual secret formats may not be detected. Static checks cannot
+prove that a project builds, that a Dockerfile succeeds, or that its tests
+pass.
+
 ## Tests
 
 The project uses Python's standard-library `unittest` framework. With the

@@ -18,7 +18,7 @@ if str(SOURCE_ROOT) not in sys.path:
 
 from repoready import __version__  # noqa: E402
 from repoready.cli import main  # noqa: E402
-from repoready.scanner import scan_project  # noqa: E402
+from repoready.scanner import ProjectSnapshot, scan_project  # noqa: E402
 from repoready.checks import run_checks  # noqa: E402
 from repoready.scoring import calculate_score  # noqa: E402
 
@@ -134,6 +134,45 @@ class CliTests(unittest.TestCase):
             self.assertEqual(stdout, "")
             self.assertIn("could not write the JSON report", stderr)
             self.assertNotIn("written to", stderr)
+
+    def test_export_exception_is_generic_and_does_not_print_report(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            self._project(root)
+            secret = "PASSWORD=synthetic-export-secret"
+            with patch(
+                "repoready.cli.write_json_report",
+                side_effect=OSError(secret),
+            ):
+                code, stdout, stderr = self._run([str(root), "--json", str(root / "report.json")])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("could not write the JSON report", stderr)
+            self.assertNotIn(secret, stderr)
+            self.assertNotIn("synthetic-export-secret", stderr)
+
+    def test_verbose_scanner_errors_are_summaries_without_contents(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            self._project(root)
+            secret = "API_KEY=synthetic-cli-scanner-secret"
+            snapshot = ProjectSnapshot(root, (), scan_errors=(secret,))
+            with patch("repoready.cli.scan_project", return_value=snapshot):
+                code, stdout, stderr = self._run([str(root), "--verbose"])
+
+            self.assertEqual(code, 0)
+            self.assertEqual(stderr, "")
+            self.assertIn("Scanner error:", stdout)
+            self.assertNotIn("synthetic-cli-scanner-secret", stdout)
+
+    def test_unsupported_argument_uses_argparse_error(self) -> None:
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            with self.assertRaises(SystemExit) as raised:
+                main(["--unsupported"])
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("unrecognized arguments", stderr.getvalue())
 
     def test_unicode_project_path_is_reported(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

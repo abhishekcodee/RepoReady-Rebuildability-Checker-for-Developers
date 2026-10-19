@@ -7,6 +7,7 @@ copy scanned source text, including the contents of environment files.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import tempfile
@@ -46,26 +47,40 @@ _STATUS_ORDER: Final[tuple[Status, ...]] = (
 # labels and surrounding explanations.
 _SECRET_ASSIGNMENT = re.compile(
     r"(?ix)(\b(?:api[ _-]?key|access[ _-]?token|auth(?:entication)?[ _-]?token|"
-    r"client[ _-]?secret|password|passwd|secret|token|private[ _-]?key)\b"
+    r"authorization|cookie|client[ _-]?secret|password|passwd|secret|token|private[ _-]?key)\b"
     r"\s*(?:=|:)\s*)("
     r"(?:\"[^\"]*\"|'[^']*'|[^\s,;\]\}\)]+)"
     r")"
 )
 _SECRET_PREFIX = re.compile(r"(?i)\b(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{12,}|xox[baprs]-[A-Za-z0-9-]{12,})\b")
+_SECRET_BEARER = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{8,}")
+_SECRET_MARKER = re.compile(
+    r"(?i)\b(?:synthetic|fixture|test)(?:[ _-][A-Za-z0-9]+){0,3}"
+    r"[ _-](?:secret|token|password)(?:[ _-][A-Za-z0-9]+)*\b"
+)
+_EXCEPTION_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception)$")
+_SCANNER_OPERATIONS: Final[frozenset[str]] = frozenset({
+    "scandir failed",
+    "stat failed",
+    "read failed",
+    "entry inspection failed",
+})
 
 
 def _redact(value: str) -> str:
     """Redact obvious secret assignments and well-known token prefixes."""
 
     redacted = _SECRET_ASSIGNMENT.sub(r"\1[REDACTED]", value)
-    return _SECRET_PREFIX.sub("[REDACTED]", redacted)
+    redacted = _SECRET_PREFIX.sub("[REDACTED]", redacted)
+    redacted = _SECRET_BEARER.sub("Bearer [REDACTED]", redacted)
+    return _SECRET_MARKER.sub("[REDACTED]", redacted)
 
 
 def _path_value(value: Path | os.PathLike[str] | None) -> str | None:
     if value is None:
         return None
     if isinstance(value, Path):
-        return value.as_posix()
+        return _redact(value.as_posix())
     return str(value)
 
 
@@ -84,36 +99,119 @@ def _status_value(value: object) -> str:
 def _safe_text(value: object) -> str:
     if isinstance(value, str):
         return _redact(value)
-    return _redact(str(value))
+    if isinstance(value, bytes):
+        return _redact(value.decode("utf-8", errors="replace"))
+    if isinstance(value, Path):
+        return _redact(value.as_posix())
+    if value is None or isinstance(value, (bool, int)):
+        return str(value)
+    if isinstance(value, float):
+        return str(value) if math.isfinite(value) else "0"
+    # Do not call arbitrary __str__ implementations: they can fail or return
+    # source contents supplied by a caller.
+    return f"<{type(value).__name__}>"
 
 
 def _safe_sequence(values: object) -> list[str]:
     if values is None:
         return []
     if isinstance(values, (str, bytes)):
-        return [_safe_text(values.decode() if isinstance(values, bytes) else values)]
-    try:
-        return [_safe_text(value) for value in values]  # type: ignore[union-attr]
-    except TypeError:
         return [_safe_text(values)]
+    try:
+        iterator = iter(values)  # type: ignore[arg-type]
+    except Exception:
+        return [_safe_text(values)]
+    output: list[str] = []
+    try:
+        for value in iterator:
+            output.append(_safe_text(value))
+    except Exception:
+        output.append("[unavailable sequence item]")
+    return output
 
 
-def _json_safe(value: object) -> JsonValue:
+def _json_safe(value: object, _seen: set[int] | None = None) -> JsonValue:
     """Convert supported report values into JSON-compatible primitives."""
 
+    if _seen is None:
+        _seen = set()
     if isinstance(value, Enum):
-        return _json_safe(value.value)
+        return _json_safe(value.value, _seen)
     if isinstance(value, (datetime,)):
-        return _timestamp(value)
-    if value is None or isinstance(value, (bool, int, float, str)):
-        return value  # type: ignore[return-value]
+        try:
+            return _timestamp(value)
+        except Exception:
+            return "[invalid timestamp]"
+    if value is None or isinstance(value, (bool, int)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, str):
+        return _redact(value)
+    if isinstance(value, bytes):
+        return _redact(value.decode("utf-8", errors="replace"))
     if isinstance(value, Path):
         return value.as_posix()
+    identity = id(value)
+    if identity in _seen:
+        return "[circular reference]"
+    _seen.add(identity)
     if isinstance(value, Mapping):
-        return {str(key): _json_safe(item) for key, item in value.items()}
+        result: dict[str, JsonValue] = {}
+        try:
+            items = value.items()
+            for key, item in items:
+                result[_safe_text(key)] = _json_safe(item, _seen)
+        except Exception:
+            result.setdefault("[unavailable mapping item]", None)
+        finally:
+            _seen.discard(identity)
+        return result
     if isinstance(value, (list, tuple, set, frozenset)):
-        return [_json_safe(item) for item in value]
-    return str(value)
+        result_list: list[JsonValue] = []
+        try:
+            for item in value:
+                result_list.append(_json_safe(item, _seen))
+        except Exception:
+            result_list.append("[unavailable sequence item]")
+        finally:
+            _seen.discard(identity)
+        return result_list
+    _seen.discard(identity)
+    return f"<{type(value).__name__}>"
+
+
+def _scanner_error_summary(value: object) -> str:
+    """Keep scanner errors useful without retaining provider-controlled text."""
+
+    text = value if isinstance(value, str) else ""
+    if text.startswith("Scanner error:"):
+        text = text.removeprefix("Scanner error:").strip()
+        parts = text.rsplit(": ", 2)
+        if len(parts) >= 2:
+            operation = parts[-2] if len(parts) == 3 else parts[-1]
+            exception_name = parts[-1] if len(parts) == 3 else ""
+            if operation in _SCANNER_OPERATIONS:
+                suffix = f" ({exception_name})" if _EXCEPTION_NAME.fullmatch(exception_name) else ""
+                return f"Scanner error: {operation}{suffix}"
+        return "Scanner error: details unavailable"
+    parts = text.rsplit(": ", 2)
+    if len(parts) >= 2:
+        operation = parts[-2] if len(parts) == 3 else parts[-1]
+        exception_name = parts[-1] if len(parts) == 3 else ""
+        if operation in _SCANNER_OPERATIONS:
+            suffix = f" ({exception_name})" if _EXCEPTION_NAME.fullmatch(exception_name) else ""
+            return f"Scanner error: {operation}{suffix}"
+    return "Scanner error: details unavailable"
+
+
+def _file_limitation(entry: object) -> str:
+    """Describe an unreadable entry without copying its error text."""
+
+    relative = getattr(entry, "relative_path", None)
+    if isinstance(relative, Path):
+        return f"{relative.as_posix()}: file could not be safely inspected."
+    return "A file could not be safely inspected."
 
 
 def _timestamp(value: datetime) -> str:
@@ -188,7 +286,7 @@ def _scanner_limitations(snapshot: ProjectSnapshot) -> list[str]:
         limitations.append(f"Skipped {len(snapshot.skipped_paths)} path(s) by scanner policy.")
     for entry in snapshot.files:
         if entry.error:
-            limitations.append(f"{entry.relative_path.as_posix()}: {entry.error}")
+            limitations.append(_file_limitation(entry))
     return list(dict.fromkeys(_redact(item) for item in limitations))
 
 
@@ -215,35 +313,45 @@ def build_report(
     calculated = score if score is not None else calculate_score(supplied)
     recommendations = generate_recommendations(supplied)
     timestamp = _timestamp(generated_at or datetime.now(timezone.utc))
+    def score_field(name: str, default: object = 0) -> object:
+        try:
+            return getattr(calculated, name)
+        except Exception:
+            return default
+
+    raw_status_counts = score_field("status_counts", {})
     score_data: dict[str, JsonValue] = {
-        "overall_score": calculated.overall_score,
-        "maximum": calculated.maximum,
-        "earned_weight": calculated.earned_weight,
-        "applicable_weight": calculated.applicable_weight,
-        "evaluable_weight": calculated.evaluable_weight,
-        "coverage": calculated.coverage,
-        "total_count": calculated.total_count,
-        "applicable_count": calculated.applicable_count,
-        "evaluable_count": calculated.evaluable_count,
-        "skipped_count": calculated.skipped_count,
+        "overall_score": _json_safe(score_field("overall_score", 0.0)),
+        "maximum": _json_safe(score_field("maximum", 0.0)),
+        "earned_weight": _json_safe(score_field("earned_weight", 0.0)),
+        "applicable_weight": _json_safe(score_field("applicable_weight", 0.0)),
+        "evaluable_weight": _json_safe(score_field("evaluable_weight", 0.0)),
+        "coverage": _json_safe(score_field("coverage", 0.0)),
+        "total_count": _json_safe(score_field("total_count", 0)),
+        "applicable_count": _json_safe(score_field("applicable_count", 0)),
+        "evaluable_count": _json_safe(score_field("evaluable_count", 0)),
+        "skipped_count": _json_safe(score_field("skipped_count", 0)),
         "status_counts": {
-            status.value: int(calculated.status_counts.get(status.value, 0))
+            status.value: _json_safe(
+                raw_status_counts.get(status.value, 0)
+                if isinstance(raw_status_counts, Mapping) else 0
+            )
             for status in _STATUS_ORDER
         },
-        "formula": _redact(calculated.formula),
-        "limitations": _safe_sequence(calculated.limitations),
+        "formula": _safe_text(score_field("formula", "")),
+        "limitations": _safe_sequence(score_field("limitations", ())),
     }
     scanner_data: dict[str, JsonValue] = {
         "limitations": _scanner_limitations(snapshot),
-        "scan_errors": [_redact(error) for error in snapshot.scan_errors],
-        "skipped_paths": [entry.as_posix() for entry in snapshot.skipped_paths],
+        "scan_errors": [_scanner_error_summary(error) for error in snapshot.scan_errors],
+        "skipped_paths": [_redact(entry.as_posix()) for entry in snapshot.skipped_paths],
     }
     report: Report = {
         "schema_version": REPORT_SCHEMA_VERSION,
         "tool": {"name": TOOL_NAME, "version": __version__},
         "generated_at": timestamp,
         "scan_timestamp": timestamp,
-        "project": {"path": str(snapshot.root)},
+        "project": {"path": _redact(str(snapshot.root))},
         "score": score_data,
         "summary": {"status_counts": _status_counts(supplied)},
         "checks": [_check_report(result, recommendations) for result in supplied],
@@ -286,12 +394,14 @@ def write_json_report(report: Mapping[str, object], output_path: str | os.PathLi
     try:
         payload = serialize_report(report) + "\n"
     except Exception as exc:
-        raise ReportWriteError(f"could not serialize report: {exc}") from exc
+        raise ReportWriteError("could not serialize report safely") from exc
 
     temporary: str | None = None
+    descriptor: int | None = None
     try:
-        fd, temporary = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".tmp", dir=parent)
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
+        descriptor, temporary = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".tmp", dir=parent)
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
+            descriptor = None
             stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())
@@ -299,6 +409,11 @@ def write_json_report(report: Mapping[str, object], output_path: str | os.PathLi
         temporary = None
         return destination
     except Exception as exc:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
         cleanup_error: Exception | None = None
         if temporary is not None:
             try:
@@ -307,9 +422,9 @@ def write_json_report(report: Mapping[str, object], output_path: str | os.PathLi
                 pass
             except Exception as cleanup_exc:  # make cleanup failures explicit
                 cleanup_error = cleanup_exc
-        detail = f"could not atomically write report to {destination}: {exc}"
+        detail = f"could not atomically write report to {destination}"
         if cleanup_error is not None:
-            detail += f"; temporary-file cleanup failed: {cleanup_error}"
+            detail += "; temporary-file cleanup failed"
         raise ReportWriteError(detail) from exc
 
 

@@ -1,4 +1,5 @@
 import json
+import math
 import pathlib
 import sys
 import tempfile
@@ -18,7 +19,7 @@ from repoready.report import (
     serialize_report,
     write_json_report,
 )
-from repoready.scanner import ProjectSnapshot, scan_project
+from repoready.scanner import FileEntry, ProjectSnapshot, scan_project
 from repoready.scoring import calculate_score
 
 
@@ -118,6 +119,45 @@ class ReportTests(unittest.TestCase):
             self.assertNotIn("do-not-report", rendered)
             self.assertIn("Sensitive files", rendered)
 
+    def test_malformed_scanner_errors_are_reduced_to_safe_summaries(self):
+        snapshot = ProjectSnapshot(
+            pathlib.Path("/tmp/プロジェクト"),
+            (FileEntry(
+                pathlib.Path("/tmp/プロジェクト/bad.txt"),
+                pathlib.Path("bad.txt"),
+                10,
+                False,
+                error="API_KEY=synthetic-scanner-secret",
+            ),),
+            scan_errors=(
+                "bad.txt: read failed: PermissionError",
+                "API_KEY=synthetic-scanner-secret",
+            ),
+        )
+        rendered = serialize_report(build_report(snapshot, ()))
+        self.assertNotIn("synthetic-scanner-secret", rendered)
+        self.assertIn("Scanner error: read failed (PermissionError)", rendered)
+        self.assertIn("bad.txt: file could not be safely inspected.", rendered)
+
+    def test_prefixed_scanner_error_is_not_trusted_or_echoed(self):
+        snapshot = ProjectSnapshot(
+            pathlib.Path("/tmp/project"), (),
+            scan_errors=("Scanner error: API_KEY=synthetic-prefixed-secret",),
+        )
+
+        rendered = serialize_report(build_report(snapshot, ()))
+
+        self.assertNotIn("synthetic-prefixed-secret", rendered)
+        self.assertIn("Scanner error: details unavailable", rendered)
+
+    def test_secret_like_project_path_is_redacted_in_report_metadata(self):
+        secret_name = "project-API_KEY=synthetic-path-secret"
+        snapshot = ProjectSnapshot(pathlib.Path("/tmp") / secret_name, ())
+
+        rendered = serialize_report(build_report(snapshot, ()))
+
+        self.assertNotIn("synthetic-path-secret", rendered)
+
     def test_supported_objects_are_json_safe(self):
         rendered = serialize_report(
             {
@@ -128,6 +168,27 @@ class ReportTests(unittest.TestCase):
         )
         value = json.loads(rendered)
         self.assertEqual(value, {"path": "src/app.py", "status": "WARNING", "when": "2026-01-01T00:00:00Z"})
+
+    def test_malformed_and_nonfinite_values_serialize_as_safe_json(self):
+        class BrokenValue:
+            def __str__(self):
+                raise AssertionError("this value must never be stringified")
+
+        rendered = serialize_report({
+            "unicode": "café ✓",
+            "secret": "PASSWORD=synthetic-report-secret",
+            "nan": math.nan,
+            "positive_infinity": math.inf,
+            "negative_infinity": -math.inf,
+            "malformed": BrokenValue(),
+        })
+        value = json.loads(rendered)
+        self.assertEqual(value["unicode"], "café ✓")
+        self.assertIsNone(value["nan"])
+        self.assertIsNone(value["positive_infinity"])
+        self.assertIsNone(value["negative_infinity"])
+        self.assertEqual(value["malformed"], "<BrokenValue>")
+        self.assertNotIn("synthetic-report-secret", rendered)
 
     def test_empty_report_input_is_safe(self):
         snapshot = ProjectSnapshot(pathlib.Path("project with spaces"), ())
@@ -158,6 +219,7 @@ class ReportTests(unittest.TestCase):
                 with self.assertRaises(ReportWriteError) as error:
                     write_json_report({"status": Status.PASS}, output)
             self.assertIn("atomically write", str(error.exception))
+            self.assertNotIn("denied", str(error.exception))
             self.assertEqual(output.read_text(encoding="utf-8"), "original")
             self.assertFalse(any(path.name.startswith(".report.json.") for path in pathlib.Path(directory).iterdir()))
 
