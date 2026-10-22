@@ -82,6 +82,17 @@ class VercelAdapterTests(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertIn("text/html", dict(response.headers_sent)["Content-Type"])
 
+    def test_json_query_overrides_browser_accept_header(self) -> None:
+        response = FakeHandler()
+        response.path = "/api?format=json"
+        response.headers["Accept"] = "text/html,application/xhtml+xml"
+
+        MODULE.handler.do_GET(response)
+
+        self.assertEqual(response.status, 200)
+        self.assertIn("application/json", dict(response.headers_sent)["Content-Type"])
+        self.assertEqual(json.loads(response.wfile.getvalue())["tool"]["name"], "RepoReady")
+
 
 if __name__ == "__main__":
     unittest.main()
