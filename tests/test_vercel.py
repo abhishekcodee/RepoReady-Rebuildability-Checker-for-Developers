@@ -72,9 +72,10 @@ class VercelAdapterTests(unittest.TestCase):
         self.assertIn("text/html", dict(response.headers_sent)["Content-Type"])
         self.assertIn("RepoReady", response.wfile.getvalue().decode("utf-8"))
 
-    def test_root_path_returns_dashboard_even_without_accept_header(self) -> None:
+    def test_root_path_returns_dashboard_for_browser_accept_header(self) -> None:
         response = FakeHandler()
         response.path = "/"
+        response.headers["Accept"] = "text/html,application/xhtml+xml"
 
         MODULE.handler.do_GET(response)
 
