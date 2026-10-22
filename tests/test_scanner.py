@@ -28,6 +28,19 @@ class ScannerTests(unittest.TestCase):
             self.assertIn(pathlib.Path("build"), snap.skipped_paths)
             self.assertIsNone(snap.get(".env").text)
 
+    def test_environment_example_is_safe_to_inspect(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d)
+            example = root / ".env.example"
+            example.write_text("TOKEN=\n", encoding="utf-8")
+
+            snapshot = scan_project(root)
+            entry = snapshot.get(".env.example")
+
+            self.assertIsNotNone(entry)
+            self.assertTrue(entry.is_text)
+            self.assertEqual((entry.text or "").replace("\r\n", "\n"), "TOKEN=\n")
+
     def test_generated_directories_are_skipped_case_insensitively(self):
         with tempfile.TemporaryDirectory() as d:
             root = pathlib.Path(d)

@@ -59,8 +59,9 @@ class handler(BaseHTTPRequestHandler):
             _json_response(self, 500, '{"error":"RepoReady could not scan the deployment"}')
             return
 
+        request_path = self.path.split("?", 1)[0]
         accept = self.headers.get("Accept", "")
-        if "text/html" in accept and DASHBOARD_PATH.is_file():
+        if request_path == "/" or ("text/html" in accept and DASHBOARD_PATH.is_file()):
             _response(self, 200, DASHBOARD_PATH.read_text(encoding="utf-8"), "text/html; charset=utf-8")
             return
         _json_response(self, 200, report)

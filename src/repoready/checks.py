@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -60,6 +61,14 @@ def _recognized_project(snapshot: ProjectSnapshot) -> bool:
 def check_git_repository(snapshot: ProjectSnapshot) -> CheckResult:
     """Detect repository presence and whether HEAD names a commit."""
     metadata = snapshot.root / ".git"
+    if os.environ.get("VERCEL") == "1" and not metadata.exists():
+        return _result(
+            "git_repository",
+            Status.NOT_APPLICABLE,
+            "Git metadata is not included in the Vercel deployment artifact",
+            applicable=False,
+            limitations=("Deployment artifacts do not include the source Git directory.",),
+        )
     if shutil.which("git") is None:
         if metadata.exists():
             return _result("git_repository", Status.UNKNOWN,
@@ -170,7 +179,8 @@ def check_pinned_runtime(snapshot: ProjectSnapshot) -> CheckResult:
             else "digest-pinned Docker base" if digest
             else "patch-pinned Docker base"
         )
-    if evidence and not vague: return _result("pinned_runtime", Status.PASS, "Pinned runtime evidence found", tuple(evidence))
+    if evidence and (not vague or bounded or digest or tagged):
+        return _result("pinned_runtime", Status.PASS, "Pinned runtime evidence found", tuple(evidence))
     return _result("pinned_runtime", Status.WARNING, "Runtime evidence is missing or vague", tuple(evidence), "Pin an exact runtime version or Docker base digest.")
 
 

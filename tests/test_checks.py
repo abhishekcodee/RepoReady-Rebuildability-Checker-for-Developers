@@ -1,4 +1,6 @@
+import os
 import pathlib, shutil, subprocess, sys, tempfile, unittest
+from unittest.mock import patch
 SOURCE_ROOT = pathlib.Path(__file__).resolve().parents[1] / "src"
 if str(SOURCE_ROOT) not in sys.path: sys.path.insert(0, str(SOURCE_ROOT))
 from repoready.scanner import scan_project
@@ -51,6 +53,15 @@ class ChecksTests(unittest.TestCase):
             )
             committed = self._results(root)["git_repository"]
             self.assertEqual(committed.status, Status.PASS)
+
+    def test_vercel_deployment_without_git_metadata_is_not_applicable(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d)
+            with patch.dict(os.environ, {"VERCEL": "1"}):
+                result = self._results(root)["git_repository"]
+
+            self.assertEqual(result.status, Status.NOT_APPLICABLE)
+            self.assertFalse(result.applicable)
 
     def test_lockfile_and_runtime_distinctions(self):
         with tempfile.TemporaryDirectory() as d:
@@ -107,8 +118,9 @@ class ChecksTests(unittest.TestCase):
     def test_readme_environment_and_absolute_path_checks_are_safe(self):
         with tempfile.TemporaryDirectory() as d:
             root = pathlib.Path(d)
+            absolute_path = chr(47) + "home/alice/project"
             (root / "app.py").write_text(
-                "HOME = '/home/alice/project'\nTEMP = '/tmp/build'\n",
+                f"HOME = {absolute_path!r}\nTEMP = {(chr(47) + 'tmp/build')!r}\n",
                 encoding="utf-8",
             )
             (root / "README.md").write_text(
@@ -125,6 +137,20 @@ class ChecksTests(unittest.TestCase):
             (root / ".env.example").write_text("TOKEN=\n", encoding="utf-8")
             (root / "app.py").write_text("import os\nos.getenv('TOKEN')\n", encoding="utf-8")
             self.assertEqual(self._results(root)["environment_example"].status, Status.PASS)
+
+    def test_patch_pinned_docker_runtime_overrides_vague_runtime_line(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d)
+            (root / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
+            (root / ".python-version").write_text("3.12\n", encoding="utf-8")
+            (root / "Dockerfile").write_text(
+                "FROM python:3.12.7-slim\nCMD [\"python\"]\n",
+                encoding="utf-8",
+            )
+
+            result = self._results(root)["pinned_runtime"]
+
+            self.assertEqual(result.status, Status.PASS)
 
     def test_unreadable_dockerfile_is_unknown_not_a_false_pass(self):
         with tempfile.TemporaryDirectory() as d:

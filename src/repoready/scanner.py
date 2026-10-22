@@ -9,8 +9,9 @@ from pathlib import Path
 DEFAULT_MAX_FILE_SIZE = 1024 * 1024
 SKIP_DIRECTORIES = {".git", ".venv", "venv", "node_modules", "__pycache__",
                     "dist", "build", "cache", ".cache", ".tox", ".mypy_cache",
-                    ".pytest_cache", ".ruff_cache", "coverage", "target",
-                    ".gradle", ".next", ".parcel-cache", "vendor"}
+                     ".pytest_cache", ".ruff_cache", "coverage", "target",
+                     ".gradle", ".next", ".parcel-cache", "vendor", "_vendor",
+                     ".vercel", ".opencode"}
 _SKIP_DIRECTORY_NAMES = frozenset(name.casefold() for name in SKIP_DIRECTORIES)
 
 
@@ -58,7 +59,8 @@ class ProjectSnapshot:
 
 def _sensitive(relative: Path) -> bool:
     name = relative.name.lower()
-    return (name == ".env" or name.startswith(".env.") or
+    safe_example = name in {".env.example", ".env.template", "example.env"}
+    return ((name == ".env" or (name.startswith(".env.") and not safe_example)) or
             any(token in name for token in ("private_key", "private-key",
                                              "privatekey", "id_rsa", "id_ed25519",
                                              "id_ecdsa", "id_dsa")))
